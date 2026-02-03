@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { Suspense, useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -16,6 +16,12 @@ import { useToast } from "@/components/ui/toast";
 
 import type { BooksPaged, Genre } from "@/lib/types";
 import { formatRupiah } from "@/lib/utils";
+
+/**
+ * ✅ Penting untuk deploy:
+ * - useSearchParams wajib berada di dalam <Suspense>
+ * - Wrapper page ini mencegah error build prerender di Vercel
+ */
 
 /* ---------------- helpers ---------------- */
 
@@ -116,7 +122,6 @@ function toIntOrNull(v: any): number | null {
 /* ---------------- API fetchers ---------------- */
 
 async function fetchGenres(): Promise<Genre[]> {
-  // ✅ pakai Next API route (lebih aman & konsisten)
   const raw = await fetchJson("/api/genres");
   return normalizeGenres(raw);
 }
@@ -153,7 +158,8 @@ function paramsToSort(sort_by?: string | null, order?: string | null): SortKey {
   return "newest";
 }
 
-export default function BooksPage() {
+/** ✅ INNER: semua hook next/navigation dipakai di sini */
+function BooksPageInner() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -235,7 +241,7 @@ export default function BooksPage() {
     () => ({
       page,
       limit: 12,
-      search: search || undefined,
+      search: search?.trim() ? search.trim() : undefined,
       genre_id: genreId ? Number(genreId) : undefined,
       sort_by,
       order,
@@ -257,7 +263,7 @@ export default function BooksPage() {
 
   function navigate(nextPage: number) {
     const q = buildQuery({
-      search: search || undefined,
+      search: search?.trim() ? search.trim() : undefined,
       genre_id: genreId || undefined,
       page: nextPage,
       sort_by,
@@ -351,7 +357,6 @@ export default function BooksPage() {
       </Reveal>
 
       <Reveal delay={0.05}>
-        {/* ✅ tambah sort kecil, masih satu bar dan tidak merusak layout */}
         <div className="glass rounded-2xl p-4 mt-6 grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_160px] items-center relative z-30">
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari judul buku..." />
 
@@ -504,5 +509,30 @@ export default function BooksPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** ✅ OUTER: wrapper Suspense (WAJIB untuk useSearchParams di Next terbaru) */
+export default function BooksPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container py-10">
+          <div className="h-8 w-52 bg-white/5 rounded animate-pulse" />
+          <div className="h-4 w-72 bg-white/5 rounded mt-3 animate-pulse" />
+          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="rounded-2xl border border-white/10 bg-white/5 p-4 animate-pulse">
+                <div className="aspect-4/3 rounded-xl bg-white/5" />
+                <div className="h-4 bg-white/5 rounded mt-3" />
+                <div className="h-3 bg-white/5 rounded mt-2 w-2/3" />
+              </div>
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <BooksPageInner />
+    </Suspense>
   );
 }

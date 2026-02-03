@@ -20,6 +20,30 @@ function HeaderFallback() {
   );
 }
 
+function PageFallback() {
+  return (
+    <main className="flex-1">
+      <div className="container py-10">
+        <div className="animate-pulse grid gap-3">
+          <div className="h-6 w-56 rounded bg-white/5" />
+          <div className="h-4 w-80 rounded bg-white/5" />
+          <div className="h-24 rounded-2xl bg-white/5 mt-2" />
+
+          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="aspect-4/3 rounded-xl bg-white/5" />
+                <div className="h-4 bg-white/5 rounded mt-3" />
+                <div className="h-3 bg-white/5 rounded mt-2 w-2/3" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id" suppressHydrationWarning>
@@ -32,10 +56,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Header />
             </Suspense>
 
-            {/* Main content */}
-            <PageTransition>
-              <main className="flex-1">{children}</main>
-            </PageTransition>
+            {/* ✅ FIX: children/pages (contoh /books) pakai useSearchParams() juga */}
+            <Suspense fallback={<PageFallback />}>
+              <PageTransition>
+                <main className="flex-1">{children}</main>
+              </PageTransition>
+            </Suspense>
 
             <Footer />
           </div>
