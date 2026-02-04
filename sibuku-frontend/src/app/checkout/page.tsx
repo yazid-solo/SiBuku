@@ -7,12 +7,13 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, RefreshCcw } from "lucide-react";
+import { Copy, RefreshCcw, MapPin, CreditCard, CheckCircle2, ShieldCheck } from "lucide-react";
 
 import Card from "@/components/ui/card";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Reveal from "@/components/ui/reveal";
+import Badge from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 
 import type { CartView } from "@/lib/types";
@@ -186,20 +187,12 @@ function normalizePaymentMethods(raw: any): PaymentMethodNorm[] {
     if (!x || typeof x !== "object") continue;
 
     const id = Number(
-      x?.id_jenis_pembayaran ??
-        x?.id_payment_method ??
-        x?.id_metode_pembayaran ??
-        x?.id ??
-        NaN
+      x?.id_jenis_pembayaran ?? x?.id_payment_method ?? x?.id_metode_pembayaran ?? x?.id ?? NaN
     );
     if (!Number.isFinite(id) || id <= 0) continue;
 
     const name = String(
-      x?.nama_pembayaran ??
-        x?.nama_metode ??
-        x?.nama ??
-        x?.name ??
-        `Metode #${id}`
+      x?.nama_pembayaran ?? x?.nama_metode ?? x?.nama ?? x?.name ?? `Metode #${id}`
     ).trim();
     if (!name) continue;
 
@@ -348,6 +341,52 @@ function PaymentInstruction({ method }: { method: PaymentMethodNorm | null }) {
       <div className="text-[11px] text-white/40 mt-3">
         *Otomatis dari field <code className="text-white/70">keterangan</code>.
       </div>
+    </div>
+  );
+}
+
+/* ---------------- UI kecil (tanpa ubah logic) ---------------- */
+
+function StepItem({
+  icon,
+  title,
+  desc,
+  active,
+  done,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  active?: boolean;
+  done?: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div
+        className={[
+          "h-10 w-10 rounded-2xl flex items-center justify-center border",
+          done
+            ? "bg-emerald-500/15 border-emerald-400/20 text-emerald-200"
+            : active
+            ? "bg-indigo-500/15 border-indigo-400/20 text-indigo-200"
+            : "bg-white/5 border-white/10 text-white/60",
+        ].join(" ")}
+      >
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <div className="font-semibold text-white/90">{title}</div>
+        <div className="text-xs text-white/55 mt-0.5">{desc}</div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-white/65">{label}</span>
+      <span className={strong ? "text-indigo-200 font-extrabold" : "text-white/85 font-semibold"}>{value}</span>
     </div>
   );
 }
@@ -519,7 +558,7 @@ export default function CheckoutPage() {
         alamat_pengiriman: alamat.trim(),
       };
 
-      // ✅ catatan opsional (backend kamu sudah siap: CreateOrderRequest.catatan)
+      // ✅ catatan opsional (backend kamu sudah siap)
       if (catatan.trim()) payload.catatan = catatan.trim();
 
       return await postCheckout(payload);
@@ -573,8 +612,22 @@ export default function CheckoutPage() {
   // empty cart hanya kalau request sukses & items benar-benar kosong
   const emptyCart = !loadingCart && !cartErr && items.length === 0;
 
+  // ✅ indikator kelengkapan (tanpa ubah backend)
+  const addressComplete = useMemo(() => {
+    const nOk = nama.trim().length >= 2;
+    const hpOk = noHp.trim().length === 0 || noHp.trim().length >= 8;
+    const aOk = alamat.trim().length >= 5;
+    return nOk && hpOk && aOk;
+  }, [nama, noHp, alamat]);
+
+  const step = useMemo(() => {
+    if (!addressComplete) return 1;
+    if (!pmId) return 2;
+    return 3;
+  }, [addressComplete, pmId]);
+
   return (
-    <div className="container py-10">
+    <div className="container py-10 pb-28 md:pb-10">
       <Reveal>
         <div className="flex items-end justify-between gap-4">
           <div>
@@ -585,6 +638,33 @@ export default function CheckoutPage() {
           <Link href="/cart" className="hidden md:block">
             <Button variant="secondary">← Kembali ke Keranjang</Button>
           </Link>
+        </div>
+      </Reveal>
+
+      {/* ✅ Stepper (menjelaskan alur, tanpa ubah logic) */}
+      <Reveal delay={0.03}>
+        <div className="mt-6 grid gap-3 md:grid-cols-3 glass rounded-2xl p-4">
+          <StepItem
+            icon={<MapPin size={18} />}
+            title="1. Alamat"
+            desc="Pastikan data pengiriman benar"
+            active={step === 1}
+            done={step > 1}
+          />
+          <StepItem
+            icon={<CreditCard size={18} />}
+            title="2. Pembayaran"
+            desc="Pilih metode dari backend"
+            active={step === 2}
+            done={step > 2}
+          />
+          <StepItem
+            icon={<CheckCircle2 size={18} />}
+            title="3. Konfirmasi"
+            desc="Buat order & lanjut sukses"
+            active={step === 3}
+            done={false}
+          />
         </div>
       </Reveal>
 
@@ -647,8 +727,22 @@ export default function CheckoutPage() {
           <div className="grid gap-4">
             <Reveal delay={0.02}>
               <Card>
-                <div className="font-semibold">Alamat Pengiriman</div>
-                <p className="text-sm text-white/60 mt-1">Auto dari profil kamu. Bisa kamu ubah di sini.</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">Alamat Pengiriman</div>
+                    <p className="text-sm text-white/60 mt-1">Auto dari profil kamu. Bisa kamu ubah di sini.</p>
+                  </div>
+
+                  <Badge
+                    className={
+                      addressComplete
+                        ? "bg-emerald-500/15 text-emerald-200 border border-emerald-400/20"
+                        : "bg-amber-500/15 text-amber-200 border border-amber-400/20"
+                    }
+                  >
+                    {addressComplete ? "Lengkap" : "Belum lengkap"}
+                  </Badge>
+                </div>
 
                 <div className="mt-4 grid gap-3">
                   <Input
@@ -660,13 +754,13 @@ export default function CheckoutPage() {
                   <Input
                     value={noHp}
                     onChange={(e) => setNoHp(e.target.value)}
-                    placeholder="No. HP"
+                    placeholder="No. HP (min 8 digit)"
                     disabled={loadingProfile}
                   />
                   <Input
                     value={alamat}
                     onChange={(e) => setAlamat(e.target.value)}
-                    placeholder="Alamat lengkap"
+                    placeholder="Alamat lengkap (min 5 karakter)"
                     disabled={loadingProfile}
                   />
 
@@ -759,16 +853,20 @@ export default function CheckoutPage() {
           <Reveal delay={0.06}>
             <div className="lg:sticky lg:top-24 grid gap-4">
               <Card>
-                <div className="font-semibold">Ringkasan</div>
-
-                <div className="mt-3 text-sm text-white/70 flex justify-between">
-                  <span>Total item</span>
-                  <span className="text-white/90 font-semibold">{totalQty}</span>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-semibold">Ringkasan</div>
+                  <div className="text-xs text-white/60 inline-flex items-center gap-2">
+                    <ShieldCheck size={14} className="text-emerald-200" />
+                    Secure Checkout
+                  </div>
                 </div>
 
-                <div className="mt-2 text-sm text-white/70 flex justify-between">
-                  <span>Total harga</span>
-                  <span className="text-indigo-200 font-extrabold">{formatRupiah(totalPrice)}</span>
+                <div className="mt-3 grid gap-2">
+                  <SummaryRow label="Total item" value={String(totalQty)} />
+                  <SummaryRow label="Total harga" value={formatRupiah(totalPrice)} strong />
+                  <div className="text-[11px] text-white/45">
+                    *Total mengikuti perhitungan(order dibuat saat konfirmasi).
+                  </div>
                 </div>
 
                 <div className="mt-4 border-t border-white/10 pt-4">
@@ -787,7 +885,7 @@ export default function CheckoutPage() {
               </Card>
 
               <Card>
-                <div className="font-semibold">Item</div>
+                <div className="font-semibold">Item ({items.length})</div>
                 <div className="mt-3 grid gap-3">
                   {(items || []).map((it) => (
                     <div key={it.id_keranjang_item} className="flex items-center gap-3">
@@ -817,6 +915,21 @@ export default function CheckoutPage() {
           </Reveal>
         </div>
       )}
+
+      {/* ✅ Mobile bottom bar CTA (lebih ecommerce, tanpa ubah endpoint) */}
+      {!emptyCart ? (
+        <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden border-t border-white/10 bg-slate-950/80 backdrop-blur">
+          <div className="container py-3 flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] text-white/55">Total</div>
+              <div className="font-extrabold text-indigo-200 leading-tight">{formatRupiah(totalPrice)}</div>
+            </div>
+            <Button className="shrink-0" disabled={!canCheckout} onClick={() => checkoutMut.mutate()}>
+              {checkoutMut.isPending || patchProfileMut.isPending ? "..." : "Checkout"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

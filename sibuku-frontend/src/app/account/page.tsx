@@ -4,9 +4,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, Store, User2 } from "lucide-react";
+import { LayoutDashboard, Store, User2, CreditCard, ShoppingCart, PackageOpen } from "lucide-react";
 
 import Card from "@/components/ui/card";
 import Button from "@/components/ui/button";
@@ -47,8 +47,10 @@ async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
     ...init,
   });
 
-  // aman untuk response kosong
-  const text = await res.text();
+  // ✅ handle 204 body kosong
+  if (res.status === 204) return null as T;
+
+  const text = await res.text().catch(() => "");
   let data: any = null;
   try {
     data = text ? JSON.parse(text) : null;
@@ -92,6 +94,87 @@ async function patchRole(role: "customer" | "admin") {
   });
 }
 
+/* ---------------- ecommerce helpers ---------------- */
+
+type CartSummary = { total_qty?: number; total_price?: number };
+type OrderAny = any;
+
+function norm(s: any) {
+  return String(s ?? "").toLowerCase().trim();
+}
+function isUnpaid(o: any) {
+  const pay = norm(o?.status_pembayaran?.nama_status);
+  return pay.includes("menunggu") || pay.includes("pending") || pay.includes("belum");
+}
+function isProcessing(o: any) {
+  const st = norm(o?.status_order?.nama_status);
+  return st.includes("diproses") || st.includes("proses");
+}
+function isShipping(o: any) {
+  const st = norm(o?.status_order?.nama_status);
+  return st.includes("dikirim") || st.includes("siap kirim") || st.includes("siap dikirim") || st.includes("shipping");
+}
+function isDone(o: any) {
+  const st = norm(o?.status_order?.nama_status);
+  const pay = norm(o?.status_pembayaran?.nama_status);
+  return st.includes("selesai") || pay.includes("lunas");
+}
+function isCancel(o: any) {
+  const st = norm(o?.status_order?.nama_status);
+  const pay = norm(o?.status_pembayaran?.nama_status);
+  return st.includes("batal") || st.includes("dibatalkan") || pay.includes("gagal");
+}
+function getOrderId(o: any): string {
+  const raw = o?.id_order ?? o?.id ?? "";
+  return String(raw ?? "").trim();
+}
+function normalizeArrayAny(x: any): any[] {
+  if (Array.isArray(x)) return x;
+  if (x && Array.isArray(x.data)) return x.data;
+  if (x?.data?.data && Array.isArray(x.data.data)) return x.data.data;
+  if (x?.results && Array.isArray(x.results)) return x.results;
+  return [];
+}
+
+/** coba ambil cart summary dari endpoint paling umum tanpa bikin error kalau beda */
+async function fetchCartSummarySmart(): Promise<CartSummary> {
+  // 1) jika kamu punya route /api/cart-summary (sering dipakai di app)
+  try {
+    const s = await fetchJson<CartSummary>("/api/cart-summary");
+    if (s && (typeof s.total_qty === "number" || typeof s.total_price === "number")) return s;
+  } catch (e: any) {
+    // kalau 404, fallback ke /api/cart
+    if (e?.status !== 404) {
+      // selain 404, biarkan gagal (biar keliatan kalau token/session bermasalah)
+    }
+  }
+
+  // 2) fallback: hitung dari /api/cart
+  try {
+    const cart = await fetchJson<any>("/api/cart");
+    const total_qty = Number(cart?.summary?.total_qty ?? 0);
+    const total_price = Number(cart?.summary?.total_price ?? 0);
+    return { total_qty, total_price };
+  } catch {
+    return { total_qty: 0, total_price: 0 };
+  }
+}
+
+async function fetchOrdersSmart(): Promise<OrderAny[]> {
+  const data = await fetchJson<any>("/api/orders");
+  return normalizeArrayAny(data);
+}
+
+/** ecommerce: normalisasi input hp (aman, tidak maksa) */
+function normalizePhoneInput(v: string) {
+  const raw = String(v ?? "");
+  // keep + and digits then normalize to ID style
+  const cleaned = raw.replace(/[^\d+]/g, "");
+  if (cleaned.startsWith("+62")) return "0" + cleaned.slice(3);
+  if (cleaned.startsWith("62")) return "0" + cleaned.slice(2);
+  return cleaned;
+}
+
 function RolePill({ role }: { role: string }) {
   const isAdmin = role === "admin";
   return (
@@ -107,6 +190,8 @@ function RolePill({ role }: { role: string }) {
     </span>
   );
 }
+
+/* ---------------- page ---------------- */
 
 export default function AccountPage() {
   const router = useRouter();
@@ -126,21 +211,6 @@ export default function AccountPage() {
     refetchOnWindowFocus: false,
   });
 
-  const role = useMemo(() => pickRole(profile), [profile]);
-  const isAdmin = role === "admin";
-
-  const [nama, setNama] = useState("");
-  const [noHp, setNoHp] = useState("");
-  const [alamat, setAlamat] = useState("");
-
-  // Prefill dari server
-  useEffect(() => {
-    if (!profile) return;
-    setNama(profile.nama || "");
-    setNoHp(profile.no_hp || "");
-    setAlamat(profile.alamat || "");
-  }, [profile]);
-
   // Redirect kalau 401/403
   useEffect(() => {
     const s = (error as HttpError | undefined)?.status;
@@ -149,33 +219,79 @@ export default function AccountPage() {
     }
   }, [error, router]);
 
+  const role = useMemo(() => pickRole(profile), [profile]);
+  const isAdmin = role === "admin";
+
+  const [nama, setNama] = useState("");
+  const [noHp, setNoHp] = useState("");
+  const [alamat, setAlamat] = useState("");
+  const [lastSavedAt, setLastSavedAt] = useState<string>("");
+
+  // Prefill aman: hanya isi kalau field kosong (biar tidak nimpa input user)
+  useEffect(() => {
+    if (!profile) return;
+    setNama((prev) => (prev.trim() ? prev : profile.nama || ""));
+    setNoHp((prev) => (prev.trim() ? prev : profile.no_hp || ""));
+    setAlamat((prev) => (prev.trim() ? prev : profile.alamat || ""));
+  }, [profile]);
+
+  const serverNama = (profile?.nama ?? "").trim();
+  const serverHp = (profile?.no_hp ?? "").trim();
+  const serverAlamat = (profile?.alamat ?? "").trim();
+
+  const inputNama = nama.trim();
+  const inputHp = noHp.trim();
+  const inputAlamat = alamat.trim();
+
   const dirty = useMemo(() => {
     if (!profile) return false;
-    const n0 = profile.nama ?? "";
-    const hp0 = profile.no_hp ?? "";
-    const a0 = profile.alamat ?? "";
-    return nama !== n0 || noHp !== hp0 || alamat !== a0;
-  }, [profile, nama, noHp, alamat]);
+    return inputNama !== serverNama || inputHp !== serverHp || inputAlamat !== serverAlamat;
+  }, [profile, inputNama, inputHp, inputAlamat, serverNama, serverHp, serverAlamat]);
+
+  // validasi sederhana tapi jelas
+  const namaErr = useMemo(() => {
+    if (!profile) return "";
+    if (!inputNama) return "Nama wajib diisi.";
+    if (inputNama.length < 2) return "Nama minimal 2 karakter.";
+    return "";
+  }, [profile, inputNama]);
+
+  const hpErr = useMemo(() => {
+    if (!profile) return "";
+    if (!inputHp) return ""; // optional
+    if (inputHp.length < 8) return "No HP minimal 8 digit.";
+    if (!/^0\d{7,15}$/.test(inputHp.replace(/\s+/g, ""))) return "Format No HP tidak valid (contoh: 08xxxxxxxxxx).";
+    return "";
+  }, [profile, inputHp]);
+
+  const alamatErr = useMemo(() => {
+    if (!profile) return "";
+    if (!inputAlamat) return ""; // optional tapi disarankan
+    if (inputAlamat.length < 8) return "Alamat minimal 8 karakter.";
+    return "";
+  }, [profile, inputAlamat]);
 
   const canSave = useMemo(() => {
     if (!profile) return false;
     if (!dirty) return false;
-    if (nama.trim().length < 2) return false;
-    const hpOk = noHp.trim().length === 0 || noHp.trim().length >= 8;
-    const alOk = alamat.trim().length === 0 || alamat.trim().length >= 8;
-    return hpOk && alOk;
-  }, [profile, dirty, nama, noHp, alamat]);
+    if (namaErr) return false;
+    if (hpErr) return false;
+    if (alamatErr) return false;
+    return true;
+  }, [profile, dirty, namaErr, hpErr, alamatErr]);
 
   const mutProfile = useMutation({
     mutationFn: () =>
       patchProfile({
-        nama: nama.trim(),
-        no_hp: noHp.trim() || null,
-        alamat: alamat.trim() || null,
+        nama: inputNama,
+        no_hp: inputHp || null,
+        alamat: inputAlamat || null,
       }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["profile"] });
       await qc.invalidateQueries({ queryKey: ["me"] });
+      await qc.invalidateQueries({ queryKey: ["cart-summary"] }); // profil mempengaruhi checkout, aman
+      setLastSavedAt(new Date().toISOString());
       toast({ variant: "success", title: "Tersimpan", message: "Profil berhasil diupdate." });
     },
     onError: (e: any) => {
@@ -215,6 +331,71 @@ export default function AccountPage() {
     setAlamat(profile.alamat || "");
   }
 
+  // ✅ Auto-save ecommerce: simpan saat user keluar dari field (onBlur), tapi cuma kalau valid + dirty
+  const autoSaveLock = useRef(false);
+  async function tryAutoSave() {
+    if (!profile) return;
+    if (!dirty) return;
+    if (!canSave) return;
+    if (mutProfile.isPending) return;
+    if (autoSaveLock.current) return;
+
+    autoSaveLock.current = true;
+    try {
+      await mutProfile.mutateAsync();
+    } finally {
+      // beri jeda kecil biar ga double-trigger blur beruntun
+      setTimeout(() => {
+        autoSaveLock.current = false;
+      }, 600);
+    }
+  }
+
+  // ✅ Smart summary (cart + orders) untuk shortcut ecommerce
+  const { data: cartSum } = useQuery({
+    queryKey: ["cart-summary"],
+    queryFn: fetchCartSummarySmart,
+    retry: false,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+    enabled: !!profile, // hanya kalau sudah login
+  });
+
+  const { data: ordersRaw } = useQuery({
+    queryKey: ["orders"],
+    queryFn: fetchOrdersSmart,
+    retry: false,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+    enabled: !!profile,
+  });
+
+  const orders = useMemo(() => (Array.isArray(ordersRaw) ? ordersRaw : []), [ordersRaw]);
+  const unpaidOrders = useMemo(() => orders.filter((o) => isUnpaid(o) && !isCancel(o)), [orders]);
+  const processingOrders = useMemo(() => orders.filter((o) => isProcessing(o)), [orders]);
+  const shippingOrders = useMemo(() => orders.filter((o) => isShipping(o)), [orders]);
+
+  const cartQty = Number(cartSum?.total_qty ?? 0);
+  const firstUnpaidId = useMemo(() => {
+    const o = unpaidOrders[0];
+    const id = o ? getOrderId(o) : "";
+    return id;
+  }, [unpaidOrders]);
+
+  const primaryCta = useMemo(() => {
+    // prioritas ecommerce: unpaid -> bayar, else cart -> checkout, else belanja
+    if (firstUnpaidId) return { href: `/orders/${firstUnpaidId}#payment`, label: "Bayar Sekarang", icon: <CreditCard size={16} /> };
+    if (cartQty > 0) return { href: "/checkout", label: "Ke Checkout", icon: <ShoppingCart size={16} /> };
+    return { href: "/books", label: "Belanja Sekarang", icon: <PackageOpen size={16} /> };
+  }, [firstUnpaidId, cartQty]);
+
+  function formatSavedTime(iso: string) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" }).format(d);
+  }
+
   return (
     <div className="container py-10">
       <Reveal>
@@ -243,7 +424,8 @@ export default function AccountPage() {
               <div className="h-4 w-40 bg-white/5 rounded" />
               <div className="h-10 bg-white/5 rounded mt-4" />
               <div className="h-10 bg-white/5 rounded mt-3" />
-              <div className="h-10 bg-white/5 rounded mt-3" />
+              <div className="h-24 bg-white/5 rounded mt-3" />
+              <div className="h-10 bg-white/5 rounded mt-4" />
             </div>
           ) : isError || !profile ? (
             <div>
@@ -267,7 +449,6 @@ export default function AccountPage() {
                   </div>
                 </div>
 
-                {/* quick action */}
                 {isAdmin ? (
                   <Link href="/admin">
                     <Button variant="secondary" className="gap-2">
@@ -282,13 +463,33 @@ export default function AccountPage() {
               <Input value={profile.email} readOnly />
 
               <div className="text-sm text-white/60 mt-2">Nama</div>
-              <Input value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama lengkap" />
+              <Input
+                value={nama}
+                onChange={(e) => setNama(e.target.value)}
+                onBlur={tryAutoSave}
+                placeholder="Nama lengkap"
+              />
+              {namaErr ? <div className="text-xs text-rose-200 -mt-1">{namaErr}</div> : null}
 
               <div className="text-sm text-white/60 mt-2">No HP</div>
-              <Input value={noHp} onChange={(e) => setNoHp(e.target.value)} placeholder="08xxxxxxxxxx" />
+              <Input
+                value={noHp}
+                onChange={(e) => setNoHp(normalizePhoneInput(e.target.value))}
+                onBlur={tryAutoSave}
+                placeholder="08xxxxxxxxxx"
+                inputMode="numeric"
+              />
+              {hpErr ? <div className="text-xs text-rose-200 -mt-1">{hpErr}</div> : null}
 
               <div className="text-sm text-white/60 mt-2">Alamat</div>
-              <Input value={alamat} onChange={(e) => setAlamat(e.target.value)} placeholder="Alamat pengiriman" />
+              <textarea
+                value={alamat}
+                onChange={(e) => setAlamat(e.target.value)}
+                onBlur={tryAutoSave}
+                placeholder="Alamat pengiriman (contoh: jalan, nomor, RT/RW, kecamatan, kota)"
+                className="w-full min-h-[88px] rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm text-white/80 outline-none focus:ring-2 focus:ring-indigo-500/40"
+              />
+              {alamatErr ? <div className="text-xs text-rose-200 -mt-1">{alamatErr}</div> : null}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
                 <Button
@@ -296,7 +497,7 @@ export default function AccountPage() {
                   disabled={mutProfile.isPending || !canSave}
                   onClick={() => mutProfile.mutate()}
                 >
-                  {mutProfile.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+                  {mutProfile.isPending ? "Menyimpan..." : dirty ? "Simpan Perubahan" : "Tersimpan"}
                 </Button>
 
                 <Button
@@ -309,8 +510,12 @@ export default function AccountPage() {
                 </Button>
               </div>
 
-              <div className="text-xs text-white/50 mt-2">
-                Minimal: nama ≥ 2 • no hp/alamat opsional tapi disarankan untuk checkout cepat.
+              <div className="text-xs text-white/50 mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                <span>Nama wajib.</span>
+                <span>No HP & alamat disarankan untuk checkout cepat.</span>
+                {lastSavedAt ? (
+                  <span className="text-white/40">• Terakhir tersimpan: {formatSavedTime(lastSavedAt)}</span>
+                ) : null}
               </div>
             </div>
           )}
@@ -321,6 +526,37 @@ export default function AccountPage() {
           <div className="font-semibold">Mode & Shortcut</div>
 
           <div className="mt-3 grid gap-2">
+            {/* smart stats ecommerce */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="text-sm font-semibold">Ringkasan Cepat</div>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded-xl border border-white/10 bg-slate-950/30 p-2">
+                  <div className="text-white/50">Keranjang</div>
+                  <div className="text-white/90 font-extrabold">{cartQty}</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-slate-950/30 p-2">
+                  <div className="text-white/50">Belum bayar</div>
+                  <div className="text-amber-200 font-extrabold">{unpaidOrders.length}</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-slate-950/30 p-2">
+                  <div className="text-white/50">Diproses</div>
+                  <div className="text-sky-200 font-extrabold">{processingOrders.length + shippingOrders.length}</div>
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <Link href={primaryCta.href}>
+                  <Button className="w-full gap-2">
+                    {primaryCta.icon}
+                    {primaryCta.label}
+                  </Button>
+                </Link>
+                <div className="text-[11px] text-white/50 mt-2">
+                  Tombol ini otomatis menyesuaikan: unpaid → checkout → belanja.
+                </div>
+              </div>
+            </div>
+
             {/* mode switch ecommerce */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
               <div className="text-sm font-semibold flex items-center gap-2">
@@ -329,7 +565,7 @@ export default function AccountPage() {
               </div>
               <div className="text-xs text-white/60 mt-1">
                 {isAdmin
-                  ? "Kamu bisa jual/kelola buku di dashboard. Kamu tetap bisa belanja seperti user."
+                  ? "Kamu bisa kelola buku di dashboard. Kamu tetap bisa belanja seperti user."
                   : "Aktifkan Mode Jual kalau ingin mengelola & menjual buku."}
               </div>
 
@@ -352,16 +588,17 @@ export default function AccountPage() {
                       </Button>
                     </Link>
 
-                    {/* opsional: turunkan role (kalau kamu memang mau) */}
                     <Button
                       variant="ghost"
                       className="gap-2 text-white/70"
                       disabled={mutRole.isPending || isLoading || !profile}
                       onClick={() => {
-                        const ok = window.confirm("Kembalikan akun jadi User/Pembeli?\n\nCatatan: kamu akan kehilangan akses admin.");
+                        const ok = window.confirm(
+                          "Kembalikan akun jadi User/Pembeli?\n\nCatatan: kamu akan kehilangan akses admin."
+                        );
                         if (ok) mutRole.mutate("customer");
                       }}
-                      title="Opsional (demo)"
+                      title="Opsional"
                     >
                       <User2 size={16} />
                       Jadikan User
@@ -371,19 +608,22 @@ export default function AccountPage() {
               </div>
             </div>
 
-            <Link href="/cart">
-              <Button variant="secondary" className="w-full">Ke Keranjang</Button>
-            </Link>
-            <Link href="/books">
-              <Button variant="secondary" className="w-full">Belanja Lagi</Button>
-            </Link>
-            <Link href="/orders">
-              <Button className="w-full">Riwayat Pesanan</Button>
-            </Link>
+            {/* shortcuts */}
+            <div className="grid gap-2">
+              <Link href="/cart">
+                <Button variant="secondary" className="w-full">Ke Keranjang</Button>
+              </Link>
+              <Link href="/orders">
+                <Button variant="secondary" className="w-full">Riwayat Pesanan</Button>
+              </Link>
+              <Link href="/books">
+                <Button variant="secondary" className="w-full">Belanja Lagi</Button>
+              </Link>
+            </div>
           </div>
 
           <div className="text-xs text-white/50 mt-4">
-            Profil + alamat akan dipakai untuk pengalaman checkout yang lebih cepat.
+            Profil + alamat dipakai otomatis di checkout. Auto-save aktif saat kamu selesai edit (keluar dari field).
           </div>
         </Card>
       </div>

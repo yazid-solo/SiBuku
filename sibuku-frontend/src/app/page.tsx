@@ -63,10 +63,10 @@ async function getGenres(): Promise<Genre[]> {
 /* ---------------- static data (boleh tetap manual) ---------------- */
 
 const team = [
-  { name: "Dimas Husain Rabani", role: "Product & UI/UX", avatar: "/avatars/dev1.svg" },
+  { name: "Dimas Husain Rabani", role: "Product, Frontend & UI/UX", avatar: "/avatars/dev1.svg"},
   { name: "Berlian Fatma Riyani", role: "Backend Engineer", avatar: "/avatars/dev2.svg" },
   { name: "Ibnu Abbas", role: "Frontend Engineer & Project Manager", avatar: "/avatars/dev3.svg" },
-  { name: "Muchamad Yazid Ardani", role: "Database", avatar: "/avatars/dev4.svg" },
+  { name: "Muchamad Yazid Ardani", role: "Database & Backend Engineer", avatar: "/avatars/dev4.svg" },
   { name: "Maldina Alwafa", role: "UI/UX Designer", avatar: "/avatars/dev5.svg" },
 ];
 
