@@ -58,6 +58,7 @@ app.include_router(books.router)
 app.include_router(authors.router)
 app.include_router(admin.router)
 
+
 @app.get("/", tags=["General"])
 def read_root():
     return {
@@ -70,13 +71,16 @@ def read_root():
         "version": APP_VERSION,
     }
 
+
 @app.get("/health", tags=["General"])
 def health():
     return {"status": "ok"}
 
+
 if __name__ == "__main__":
+    # ✅ FIX: karena file ini ada di app/main.py, module path yang benar adalah "app.main:app"
     uvicorn.run(
-        "main:app",
+        "app.main:app",
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
         reload=True,

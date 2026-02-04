@@ -1,15 +1,15 @@
 {
-    "version": 2,
-    "builds": [
-        {
-        "src": "app/main.py",
-        "use": "@vercel/python"
-        }
-    ],
-    "routes": [
-        {
-        "src": "/(.*)",
-        "dest": "app/main.py"
-        }
-    ]
+  "version": 2,
+  "builds": [
+    {
+      "src": "CMS_Project_Backend/api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "CMS_Project_Backend/api/index.py"
+    }
+  ]
 }
