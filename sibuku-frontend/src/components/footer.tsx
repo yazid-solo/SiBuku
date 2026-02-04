@@ -39,7 +39,7 @@ export default function Footer() {
 
       <div className="border-t border-white/10">
         <div className="container py-5 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-white/50">
-          <div>Built with ❤️ for modern ecommerce experience.</div>
+          <div>Built with for modern ecommerce experience.</div>
           <div className="flex items-center gap-4">
             <a className="hover:text-white transition" href="#" rel="noreferrer">Privacy</a>
             <a className="hover:text-white transition" href="#" rel="noreferrer">Terms</a>
