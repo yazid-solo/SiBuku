@@ -18,10 +18,22 @@ security = HTTPBearer(auto_error=False)
 
 
 def sanitize_user(user: Optional[dict]) -> Optional[dict]:
+    """
+    Hapus field sensitif, tapi biarkan field profil lain (termasuk avatar_url) tetap lewat.
+    """
     if not user:
         return user
     safe = dict(user)
+
+    # sensitif: hapus bila ada (tidak error kalau tidak ada)
     safe.pop("password", None)
+    safe.pop("hashed_password", None)
+    safe.pop("password_hash", None)
+    safe.pop("salt", None)
+    safe.pop("refresh_token", None)
+    safe.pop("reset_token", None)
+
+    # avatar_url TIDAK dihapus -> aman untuk fitur foto profil
     return safe
 
 
@@ -141,7 +153,8 @@ async def get_current_user(
             detail="Akun dinonaktifkan. Hubungi admin.",
         )
 
-    return user
+    # ✅ return versi yang sudah aman (tanpa menghapus avatar_url)
+    return sanitize_user(user) or {}
 
 
 def _role_in(user: dict, roles: Iterable[str]) -> bool:

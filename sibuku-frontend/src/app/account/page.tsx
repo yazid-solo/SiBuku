@@ -22,6 +22,9 @@ type Profile = {
   is_admin?: boolean;
   no_hp?: string | null;
   alamat?: string | null;
+
+  // ✅ avatar
+  avatar_url?: string | null;
 };
 
 type HttpError = Error & { status?: number; data?: any };
@@ -143,9 +146,8 @@ async function fetchCartSummarySmart(): Promise<CartSummary> {
     const s = await fetchJson<CartSummary>("/api/cart-summary");
     if (s && (typeof s.total_qty === "number" || typeof s.total_price === "number")) return s;
   } catch (e: any) {
-    // kalau 404, fallback ke /api/cart
     if (e?.status !== 404) {
-      // selain 404, biarkan gagal (biar keliatan kalau token/session bermasalah)
+      // ignore, fallback ke /api/cart
     }
   }
 
@@ -168,7 +170,6 @@ async function fetchOrdersSmart(): Promise<OrderAny[]> {
 /** ecommerce: normalisasi input hp (aman, tidak maksa) */
 function normalizePhoneInput(v: string) {
   const raw = String(v ?? "");
-  // keep + and digits then normalize to ID style
   const cleaned = raw.replace(/[^\d+]/g, "");
   if (cleaned.startsWith("+62")) return "0" + cleaned.slice(3);
   if (cleaned.startsWith("62")) return "0" + cleaned.slice(2);
@@ -181,9 +182,7 @@ function RolePill({ role }: { role: string }) {
     <span
       className={[
         "inline-flex items-center rounded-full px-2.5 py-1 text-xs ring-1",
-        isAdmin
-          ? "bg-indigo-500/15 text-indigo-200 ring-indigo-500/30"
-          : "bg-white/5 text-white/70 ring-white/10",
+        isAdmin ? "bg-indigo-500/15 text-indigo-200 ring-indigo-500/30" : "bg-white/5 text-white/70 ring-white/10",
       ].join(" ")}
     >
       {isAdmin ? "Admin / Penjual" : "User / Pembeli"}
@@ -227,13 +226,42 @@ export default function AccountPage() {
   const [alamat, setAlamat] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState<string>("");
 
+  // ✅ Avatar states
+  const [avatarUrl, setAvatarUrl] = useState<string>("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarObjectUrl, setAvatarObjectUrl] = useState<string>("");
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+
   // Prefill aman: hanya isi kalau field kosong (biar tidak nimpa input user)
   useEffect(() => {
     if (!profile) return;
     setNama((prev) => (prev.trim() ? prev : profile.nama || ""));
     setNoHp((prev) => (prev.trim() ? prev : profile.no_hp || ""));
     setAlamat((prev) => (prev.trim() ? prev : profile.alamat || ""));
+
+    // avatar dari server (jangan override kalau user sedang pilih file)
+    if (!avatarFile) setAvatarUrl(profile.avatar_url || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
+
+  // preview object url (aman)
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarObjectUrl("");
+      return;
+    }
+    const u = URL.createObjectURL(avatarFile);
+    setAvatarObjectUrl(u);
+    return () => {
+      try {
+        URL.revokeObjectURL(u);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [avatarFile]);
+
+  const avatarShown = avatarObjectUrl || avatarUrl;
 
   const serverNama = (profile?.nama ?? "").trim();
   const serverHp = (profile?.no_hp ?? "").trim();
@@ -290,7 +318,7 @@ export default function AccountPage() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["profile"] });
       await qc.invalidateQueries({ queryKey: ["me"] });
-      await qc.invalidateQueries({ queryKey: ["cart-summary"] }); // profil mempengaruhi checkout, aman
+      await qc.invalidateQueries({ queryKey: ["cart-summary"] });
       setLastSavedAt(new Date().toISOString());
       toast({ variant: "success", title: "Tersimpan", message: "Profil berhasil diupdate." });
     },
@@ -324,6 +352,82 @@ export default function AccountPage() {
     },
   });
 
+  // ✅ Upload avatar mutation (FormData)
+  const mutAvatarUpload = useMutation({
+    mutationFn: async () => {
+      if (!avatarFile) throw new Error("Pilih foto dulu.");
+
+      const allowed = ["image/jpeg", "image/png", "image/webp"];
+      if (!allowed.includes(avatarFile.type)) throw new Error("File harus JPG/PNG/WEBP.");
+      if (avatarFile.size > 2 * 1024 * 1024) throw new Error("Ukuran maksimal 2MB.");
+
+      const fd = new FormData();
+      fd.append("file", avatarFile);
+
+      const res = await fetch("/api/users/profile/avatar", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+
+      const text = await res.text().catch(() => "");
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text || null;
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.message || (typeof data === "string" ? data : "") || `Upload gagal (${res.status})`);
+      }
+
+      return data;
+    },
+    onSuccess: async (data: any) => {
+      // optimistik: ambil avatar_url dari response jika ada
+      const nextUrl =
+        data?.data?.avatar_url ??
+        data?.avatar_url ??
+        data?.data?.data?.avatar_url ??
+        "";
+
+      setAvatarFile(null);
+      if (typeof nextUrl === "string" && nextUrl.trim()) setAvatarUrl(nextUrl.trim());
+
+      await qc.invalidateQueries({ queryKey: ["profile"] });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+
+      toast({ variant: "success", title: "Berhasil", message: "Foto profil diperbarui." });
+
+      // reset input file supaya bisa pilih file yang sama lagi
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    },
+    onError: (e: any) => {
+      toast({ variant: "error", title: "Gagal", message: e?.message || "Gagal upload avatar" });
+    },
+  });
+
+  // ✅ Delete avatar (optional) — butuh route DELETE /api/users/profile/avatar
+  const mutAvatarDelete = useMutation({
+    mutationFn: async () => {
+      return await fetchJson("/api/users/profile/avatar", { method: "DELETE" });
+    },
+    onSuccess: async () => {
+      setAvatarFile(null);
+      setAvatarUrl("");
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+
+      await qc.invalidateQueries({ queryKey: ["profile"] });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+
+      toast({ variant: "success", title: "Terhapus", message: "Foto profil dihapus." });
+    },
+    onError: (e: any) => {
+      toast({ variant: "error", title: "Gagal", message: e?.message || "Gagal hapus avatar" });
+    },
+  });
+
   function resetFormToServer() {
     if (!profile) return;
     setNama(profile.nama || "");
@@ -344,7 +448,6 @@ export default function AccountPage() {
     try {
       await mutProfile.mutateAsync();
     } finally {
-      // beri jeda kecil biar ga double-trigger blur beruntun
       setTimeout(() => {
         autoSaveLock.current = false;
       }, 600);
@@ -358,7 +461,7 @@ export default function AccountPage() {
     retry: false,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
-    enabled: !!profile, // hanya kalau sudah login
+    enabled: !!profile,
   });
 
   const { data: ordersRaw } = useQuery({
@@ -383,7 +486,6 @@ export default function AccountPage() {
   }, [unpaidOrders]);
 
   const primaryCta = useMemo(() => {
-    // prioritas ecommerce: unpaid -> bayar, else cart -> checkout, else belanja
     if (firstUnpaidId) return { href: `/orders/${firstUnpaidId}#payment`, label: "Bayar Sekarang", icon: <CreditCard size={16} /> };
     if (cartQty > 0) return { href: "/checkout", label: "Ke Checkout", icon: <ShoppingCart size={16} /> };
     return { href: "/books", label: "Belanja Sekarang", icon: <PackageOpen size={16} /> };
@@ -395,6 +497,8 @@ export default function AccountPage() {
     if (Number.isNaN(d.getTime())) return "";
     return new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" }).format(d);
   }
+
+  const avatarBusy = mutAvatarUpload.isPending || mutAvatarDelete.isPending;
 
   return (
     <div className="container py-10">
@@ -459,6 +563,104 @@ export default function AccountPage() {
                 ) : null}
               </div>
 
+              {/* ✅ Avatar block */}
+              <div className="mt-2 flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="h-16 w-16 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 grid place-items-center shrink-0">
+                  {avatarShown ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={avatarShown} alt="Avatar" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="text-xl font-black text-white/70">
+                      {(profile.nama || "U").slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold">Foto Profil</div>
+                  <div className="text-xs text-white/60 mt-1">JPG/PNG/WEBP • max 2MB</div>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+
+                        const allowed = ["image/jpeg", "image/png", "image/webp"];
+                        if (!allowed.includes(f.type)) {
+                          toast({ variant: "error", title: "Format salah", message: "File harus JPG/PNG/WEBP." });
+                          e.currentTarget.value = "";
+                          return;
+                        }
+                        if (f.size > 2 * 1024 * 1024) {
+                          toast({ variant: "error", title: "Kebesaran", message: "Maksimal ukuran 2MB." });
+                          e.currentTarget.value = "";
+                          return;
+                        }
+
+                        setAvatarFile(f);
+                      }}
+                    />
+
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      disabled={avatarBusy}
+                      onClick={() => avatarInputRef.current?.click()}
+                    >
+                      Pilih Foto
+                    </Button>
+
+                    <Button
+                      type="button"
+                      disabled={!avatarFile || avatarBusy}
+                      onClick={() => mutAvatarUpload.mutate()}
+                    >
+                      {mutAvatarUpload.isPending ? "Mengupload..." : "Upload"}
+                    </Button>
+
+                    {avatarUrl ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="text-rose-200 hover:bg-rose-500/10"
+                        disabled={avatarBusy}
+                        onClick={() => {
+                          const ok = window.confirm("Hapus foto profil?");
+                          if (!ok) return;
+                          mutAvatarDelete.mutate();
+                        }}
+                      >
+                        Hapus
+                      </Button>
+                    ) : null}
+
+                    {avatarFile ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="text-white/70"
+                        disabled={avatarBusy}
+                        onClick={() => {
+                          setAvatarFile(null);
+                          if (avatarInputRef.current) avatarInputRef.current.value = "";
+                        }}
+                      >
+                        Batal
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  <div className="text-[11px] text-white/45 mt-2">
+                    {avatarFile ? "Preview aktif. Klik Upload untuk menyimpan." : "Foto tersimpan akan tampil di header/akun (jika kamu pakai di UI)."}
+                  </div>
+                </div>
+              </div>
+
               <div className="text-sm text-white/60 mt-2">Email (readonly)</div>
               <Input value={profile.email} readOnly />
 
@@ -492,20 +694,11 @@ export default function AccountPage() {
               {alamatErr ? <div className="text-xs text-rose-200 -mt-1">{alamatErr}</div> : null}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
-                <Button
-                  className="w-full"
-                  disabled={mutProfile.isPending || !canSave}
-                  onClick={() => mutProfile.mutate()}
-                >
+                <Button className="w-full" disabled={mutProfile.isPending || !canSave} onClick={() => mutProfile.mutate()}>
                   {mutProfile.isPending ? "Menyimpan..." : dirty ? "Simpan Perubahan" : "Tersimpan"}
                 </Button>
 
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  disabled={mutProfile.isPending || !dirty}
-                  onClick={resetFormToServer}
-                >
+                <Button variant="secondary" className="w-full" disabled={mutProfile.isPending || !dirty} onClick={resetFormToServer}>
                   Batalkan
                 </Button>
               </div>
@@ -513,9 +706,7 @@ export default function AccountPage() {
               <div className="text-xs text-white/50 mt-2 flex flex-wrap gap-x-3 gap-y-1">
                 <span>Nama wajib.</span>
                 <span>No HP & alamat disarankan untuk checkout cepat.</span>
-                {lastSavedAt ? (
-                  <span className="text-white/40">• Terakhir tersimpan: {formatSavedTime(lastSavedAt)}</span>
-                ) : null}
+                {lastSavedAt ? <span className="text-white/40">• Terakhir tersimpan: {formatSavedTime(lastSavedAt)}</span> : null}
               </div>
             </div>
           )}
@@ -571,11 +762,7 @@ export default function AccountPage() {
 
               <div className="mt-3 flex flex-wrap gap-2">
                 {!isAdmin ? (
-                  <Button
-                    className="gap-2"
-                    disabled={mutRole.isPending || isLoading || !profile}
-                    onClick={() => mutRole.mutate("admin")}
-                  >
+                  <Button className="gap-2" disabled={mutRole.isPending || isLoading || !profile} onClick={() => mutRole.mutate("admin")}>
                     <Store size={16} />
                     Aktifkan Mode Jual
                   </Button>
@@ -593,9 +780,7 @@ export default function AccountPage() {
                       className="gap-2 text-white/70"
                       disabled={mutRole.isPending || isLoading || !profile}
                       onClick={() => {
-                        const ok = window.confirm(
-                          "Kembalikan akun jadi User/Pembeli?\n\nCatatan: kamu akan kehilangan akses admin."
-                        );
+                        const ok = window.confirm("Kembalikan akun jadi User/Pembeli?\n\nCatatan: kamu akan kehilangan akses admin.");
                         if (ok) mutRole.mutate("customer");
                       }}
                       title="Opsional"

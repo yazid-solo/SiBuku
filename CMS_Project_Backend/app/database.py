@@ -22,9 +22,9 @@ def _pick_key(prefer_service: bool = True) -> str:
     - admin endpoints (upload storage/import) biasanya butuh hak lebih.
     - lebih stabil dibanding anon kalau RLS ketat.
     """
-    if prefer_service and settings.SUPABASE_SERVICE_ROLE_KEY:
+    if prefer_service and getattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None):
         return settings.SUPABASE_SERVICE_ROLE_KEY
-    if settings.SUPABASE_ANON_KEY:
+    if getattr(settings, "SUPABASE_ANON_KEY", None):
         return settings.SUPABASE_ANON_KEY
     # harusnya tidak terjadi karena settings.validate()
     return ""
@@ -36,19 +36,45 @@ def _require(name: str, value: Optional[str]) -> str:
     return value
 
 
-SUPABASE_URL = _require("SUPABASE_URL", settings.SUPABASE_URL)
+SUPABASE_URL = _require("SUPABASE_URL", getattr(settings, "SUPABASE_URL", None))
 
 # Client untuk operasi admin/server (service_role jika ada)
 SUPABASE_ADMIN_KEY = _pick_key(prefer_service=True)
 supabase_admin: Client = _make_client(SUPABASE_URL, SUPABASE_ADMIN_KEY)
 
 # Client public (anon) — berguna kalau nanti kamu mau pisahin akses
-SUPABASE_ANON_KEY = settings.SUPABASE_ANON_KEY
+SUPABASE_ANON_KEY = getattr(settings, "SUPABASE_ANON_KEY", None)
 supabase_public: Client = _make_client(SUPABASE_URL, SUPABASE_ANON_KEY) if SUPABASE_ANON_KEY else supabase_admin
 
 # Backward-compatible: router kamu sekarang import `supabase`
 # Jadi kita set default supabase = admin client
 supabase: Client = supabase_admin
 
-if settings.DEBUG:
-    logger.info("✅ Supabase client ready. Using service_role=%s", bool(settings.SUPABASE_SERVICE_ROLE_KEY))
+
+# -------------------------
+# Helpers (opsional tapi kepakai untuk upload avatar/cover)
+# -------------------------
+def get_client(prefer_admin: bool = True) -> Client:
+    """
+    Ambil client supabase yang sesuai:
+    - prefer_admin=True: pakai supabase_admin (service_role jika ada)
+    - prefer_admin=False: pakai supabase_public (anon jika ada)
+    """
+    return supabase_admin if prefer_admin else supabase_public
+
+
+def storage_public_url(bucket: str, object_path: str) -> str:
+    """
+    Generate public URL untuk file di Supabase Storage bucket (PUBLIC).
+    Cocok untuk: avatars, book-covers (bucket public).
+    """
+    b = (bucket or "").strip()
+    p = (object_path or "").lstrip("/")
+    if not b or not p:
+        return ""
+    # format standar supabase storage public
+    return f"{SUPABASE_URL}/storage/v1/object/public/{b}/{p}"
+
+
+if getattr(settings, "DEBUG", False):
+    logger.info("✅ Supabase client ready. Using service_role=%s", bool(getattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None)))

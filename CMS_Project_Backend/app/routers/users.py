@@ -1,6 +1,9 @@
 # app/routers/users.py
 
 import os
+import uuid
+from fastapi import UploadFile, File 
+from datetime import datetime,timezone   
 from typing import Optional, Literal
 
 from dotenv import load_dotenv
@@ -14,6 +17,49 @@ from app.schemas import UserResponse
 load_dotenv()
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+# ===========================
+# AVATAR SETTINGS
+# ===========================
+AVATAR_BUCKET = (os.getenv("SUPABASE_STORAGE_BUCKET") or "avatars").strip() or "avatars"
+MAX_AVATAR_BYTES = int(os.getenv("MAX_AVATAR_BYTES", "2097152"))  # default 2MB
+
+ALLOWED_AVATAR_MIME = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+def _pick_public_url(bucket: str, path: str) -> str:
+    """
+    Supabase python client kadang return string, kadang dict.
+    Kita normalisasi biar aman.
+    """
+    u = supabase.storage.from_(bucket).get_public_url(path)
+    if isinstance(u, str):
+        return u
+    if isinstance(u, dict):
+        return (
+            u.get("publicUrl")
+            or u.get("publicURL")
+            or u.get("data", {}).get("publicUrl")
+            or u.get("data", {}).get("publicURL")
+            or ""
+        )
+    return ""
+
+def _storage_upload(bucket: str, path: str, content: bytes, content_type: str):
+    """
+    Kompatibilitas beberapa versi supabase-py:
+    ada yang pakai argumen 'file_options', ada yang langsung dict.
+    """
+    storage = supabase.storage.from_(bucket)
+    try:
+        return storage.upload(path, content, file_options={"content-type": content_type, "upsert": "true"})
+    except TypeError:
+        # fallback signature lama
+        return storage.upload(path, content, {"content-type": content_type, "upsert": "true"})
 
 
 # ===========================
@@ -107,6 +153,108 @@ def update_my_profile(payload: UserUpdatePayload, current_user: dict = Depends(g
         raise
     except Exception:
         raise HTTPException(status_code=500, detail="Gagal update profil")
+
+
+# ===========================
+# 1b) CUSTOMER: UPLOAD AVATAR
+# ===========================
+@router.post("/profile/avatar", response_model=ProfileUpdateResponse)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = int(current_user["id_user"])
+
+    # validasi type & size (pakai konstanta)
+    ct = (file.content_type or "").lower()
+    allowed = set(ALLOWED_AVATAR_MIME.keys())
+    if ct not in allowed:
+        raise HTTPException(status_code=415, detail="File harus JPG/PNG/WEBP")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File kosong")
+    if len(content) > MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=413, detail=f"Maksimal ukuran file {MAX_AVATAR_BYTES} bytes")
+
+    ext = ALLOWED_AVATAR_MIME.get(ct, ".jpg")
+    path = f"user-{user_id}/{uuid.uuid4().hex}{ext}"
+
+    try:
+        # upload ke bucket avatars (pakai konstanta)
+        supabase.storage.from_(AVATAR_BUCKET).upload(
+            path,
+            content,
+            {
+                "content-type": ct,
+                "upsert": "true",
+            },
+        )
+
+        pub = supabase.storage.from_(AVATAR_BUCKET).get_public_url(path)
+        avatar_url = ""
+        if isinstance(pub, dict):
+            avatar_url = pub.get("publicUrl") or pub.get("public_url") or ""
+        else:
+            avatar_url = str(pub or "")
+
+        if not avatar_url:
+            raise HTTPException(status_code=500, detail="Gagal membuat public URL avatar")
+
+        res = (
+            supabase.table("users")
+            .update(
+                {
+                    "avatar_url": avatar_url,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            .eq("id_user", user_id)
+            .execute()
+        )
+
+        if not res.data:
+            fresh = (
+                supabase.table("users")
+                .select("*")
+                .eq("id_user", user_id)
+                .limit(1)
+                .execute()
+            )
+            if not fresh.data:
+                raise HTTPException(status_code=404, detail="User tidak ditemukan")
+            return {"message": "Avatar berhasil diupload", "data": sanitize_user(fresh.data[0])}
+
+        return {"message": "Avatar berhasil diupload", "data": sanitize_user(res.data[0])}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal upload avatar: {str(e)}")
+
+
+@router.delete("/profile/avatar", response_model=ProfileUpdateResponse)
+def delete_my_avatar(current_user: dict = Depends(get_current_user)):
+    user_id = int(current_user["id_user"])
+    try:
+        res = (
+            supabase.table("users")
+            .update({"avatar_url": None, "updated_at": datetime.now(timezone.utc).isoformat()})
+            .eq("id_user", user_id)
+            .execute()
+        )
+        fresh = (
+            supabase.table("users")
+            .select("*")
+            .eq("id_user", user_id)
+            .limit(1)
+            .execute()
+        )
+        if not fresh.data:
+            raise HTTPException(status_code=404, detail="User tidak ditemukan")
+        return {"message": "Avatar dihapus", "data": sanitize_user(fresh.data[0])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal hapus avatar: {str(e)}")
 
 
 # ===========================

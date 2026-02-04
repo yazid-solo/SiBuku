@@ -42,6 +42,7 @@ class AuthUser(BaseSchema):
     nama: str
     email: EmailStr
     role: str
+    avatar_url: Optional[str] = None
 
 
 class TokenResponse(BaseSchema):
@@ -60,6 +61,7 @@ class UserResponse(BaseSchema):
     role: str
     no_hp: Optional[str] = None
     alamat: Optional[str] = None
+    avatar_url: Optional[str] = None
     is_active: Optional[bool] = True
     last_login: Optional[datetime] = None
     created_at: Optional[datetime] = None

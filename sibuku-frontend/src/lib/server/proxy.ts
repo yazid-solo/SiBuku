@@ -16,8 +16,7 @@ function normalizeBearerToken(raw: string | null): string | null {
   let t = raw.trim();
   if (!t) return null;
 
-  // bersihin kalau token tersimpan sebagai "Bearer xxx" atau bahkan "Bearer Bearer xxx"
-  // (loop sampai hilang)
+  // hapus "Bearer " berulang kalau kepasang dobel
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const lower = t.toLowerCase();
@@ -32,7 +31,6 @@ function ensureJsonContentType(headers: Headers, body: any) {
   if (headers.has("Content-Type")) return;
   if (headers.has("content-type")) return;
 
-  // hanya auto-set jika body string yang terlihat seperti JSON
   if (typeof body === "string") {
     const s = body.trim();
     if (s.startsWith("{") || s.startsWith("[")) {
@@ -47,25 +45,37 @@ export async function proxyFetch(
   init: RequestInit = {},
   opts: { auth?: boolean } = { auth: true }
 ) {
+  if (!env.apiBaseUrl) {
+    throw new Error("env.apiBaseUrl kosong. Cek NEXT_PUBLIC_API_BASE_URL / env.ts");
+  }
+
   const url = `${env.apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 
   const headers = new Headers(init.headers);
 
-  // forward cookie (kalau backend juga butuh)
-  const cookie = req.headers.get("cookie");
-  if (cookie) headers.set("cookie", cookie);
+  // default accept json (aman untuk text juga)
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
 
-  // auto Content-Type JSON kalau body JSON string dan header belum ada
-  ensureJsonContentType(headers, init.body);
+  const cookie = req.headers.get("cookie");
 
   // auth bearer dari cookie (default)
   if (opts.auth !== false) {
-    const tokenFromCookie = normalizeBearerToken(getCookieFromHeader(cookie, TOKEN_COOKIE));
-    if (tokenFromCookie) headers.set("Authorization", `Bearer ${tokenFromCookie}`);
+    // forward cookie kalau backend butuh
+    if (cookie) headers.set("cookie", cookie);
+
+    // jangan override Authorization kalau sudah diset dari caller
+    if (!headers.has("Authorization") && !headers.has("authorization")) {
+      const tokenFromCookie = normalizeBearerToken(getCookieFromHeader(cookie, TOKEN_COOKIE));
+      if (tokenFromCookie) headers.set("Authorization", `Bearer ${tokenFromCookie}`);
+    }
   } else {
-    // kalau endpoint auth (login/register), jangan kirim Authorization supaya tidak bentrok token lama
+    // endpoint login/register: jangan kirim auth & cookie lama
     headers.delete("Authorization");
+    headers.delete("authorization");
+    headers.delete("cookie");
   }
+
+  ensureJsonContentType(headers, init.body);
 
   const upstream = await fetch(url, {
     ...init,
@@ -76,7 +86,9 @@ export async function proxyFetch(
   const contentType = upstream.headers.get("content-type") ?? "";
   let data: any = null;
 
-  if (contentType.includes("application/json")) {
+  if (upstream.status === 204) {
+    data = null;
+  } else if (contentType.includes("application/json")) {
     data = await upstream.json().catch(() => null);
   } else {
     data = await upstream.text().catch(() => null);

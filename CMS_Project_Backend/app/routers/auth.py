@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, status, Depends
 from jose import jwt
@@ -36,19 +36,22 @@ def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
+def _clean_optional_str(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s if s else None
+
+
 def _create_access_token(*, id_user: int, email: str, role: str, expires_minutes: int) -> str:
     if not settings.SECRET_KEY:
         raise RuntimeError("SECRET_KEY belum diset")
 
     now = _now_utc()
     payload = {
-        # ✅ Pro: pakai id_user sebagai identity utama
         "id_user": int(id_user),
-
-        # ✅ tetap simpan email untuk kompatibilitas/debug
         "sub": _normalize_email(email),
-
-        "role": role,
+        "role": (role or "customer"),
         "iat": int(now.timestamp()),
         "jti": str(uuid.uuid4()),
         "exp": int((now + timedelta(minutes=expires_minutes)).timestamp()),
@@ -59,6 +62,16 @@ def _create_access_token(*, id_user: int, email: str, role: str, expires_minutes
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(user: RegisterRequest):
     email = _normalize_email(user.email)
+    nama = (user.nama or "").strip()
+
+    # validasi ringan (biar aman & rapi)
+    if len(nama) < 2:
+        raise HTTPException(status_code=422, detail="Nama minimal 2 karakter")
+    if not user.password or len(user.password) < 6:
+        raise HTTPException(status_code=422, detail="Password minimal 6 karakter")
+
+    no_hp = _clean_optional_str(getattr(user, "no_hp", None))
+    alamat = _clean_optional_str(getattr(user, "alamat", None))
 
     # Cek duplikasi email
     existing = supabase.table("users").select("id_user").eq("email", email).limit(1).execute()
@@ -68,8 +81,13 @@ async def register(user: RegisterRequest):
     hashed_password = pwd_context.hash(user.password)
 
     user_data = _to_dict(user)
+    user_data["nama"] = nama
     user_data["email"] = email
     user_data["password"] = hashed_password
+
+    # rapihin optional field
+    user_data["no_hp"] = no_hp
+    user_data["alamat"] = alamat
 
     # Paksa role customer (anti register jadi admin)
     user_data["role"] = "customer"
@@ -89,11 +107,20 @@ async def login(creds: LoginRequest):
     res = supabase.table("users").select("*").eq("email", email).limit(1).execute()
     user = res.data[0] if res.data else None
 
-    if not user or not pwd_context.verify(creds.password, user.get("password") or ""):
+    if not user:
         raise HTTPException(status_code=401, detail="Email atau Password salah")
 
     if user.get("is_active") is False:
         raise HTTPException(status_code=403, detail="Akun dinonaktifkan. Hubungi admin.")
+
+    # verify password dengan aman
+    try:
+        ok = pwd_context.verify(creds.password, user.get("password") or "")
+    except Exception:
+        ok = False
+
+    if not ok:
+        raise HTTPException(status_code=401, detail="Email atau Password salah")
 
     # Update last_login (jangan gagalkan login kalau gagal)
     try:
