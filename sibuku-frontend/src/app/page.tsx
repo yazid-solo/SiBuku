@@ -67,7 +67,7 @@ const team = [
   { name: "Berlian Fatma Riyani", role: "Backend Engineer", avatar: "/avatars/dev2.svg" },
   { name: "Ibnu Abbas", role: "Frontend Engineer & Project Manager", avatar: "/avatars/dev3.svg" },
   { name: "Muchamad Yazid Ardani", role: "Database", avatar: "/avatars/dev4.svg" },
-  { name: "Wafa", role: "UI/UX Designer", avatar: "/avatars/dev5.svg" },
+  { name: "Maldina Alwafa", role: "UI/UX Designer", avatar: "/avatars/dev5.svg" },
 ];
 
 function SectionDivider() {
@@ -251,7 +251,7 @@ export default async function HomePage() {
         </div>
 
         {!genres?.length && (
-          <div className="text-sm text-white/50 mt-7">Kategori belum tersedia (cek backend / seed genre).</div>
+          <div className="text-sm text-white/50 mt-7">Kategori belum tersedia (cek seed genre).</div>
         )}
       </section>
 
@@ -318,7 +318,7 @@ export default async function HomePage() {
         </div>
 
         {!featured?.length && (
-          <div className="text-sm text-white/50 mt-7">Buku belum tersedia (cek backend / seed buku).</div>
+          <div className="text-sm text-white/50 mt-7">Buku belum tersedia (cek seed buku).</div>
         )}
       </section>
 
@@ -334,7 +334,7 @@ export default async function HomePage() {
           {[
             { n: "01", t: "Jelajahi Katalog", d: "Cari judul buku & filter berdasarkan genre dengan cepat." },
             { n: "02", t: "Masukkan ke Keranjang", d: "Tambah / kurangi jumlah item, subtotal dihitung otomatis." },
-            { n: "03", t: "Checkout", d: "Isi alamat, pilih pembayaran, order dibuat via RPC atomic." },
+            { n: "03", t: "Checkout", d: "Isi alamat, pilih pembayaran, order dibuat." },
           ].map((x, i) => (
             <Reveal key={x.n} delay={i * 0.05}>
               <Card className="relative overflow-hidden">
@@ -383,10 +383,10 @@ export default async function HomePage() {
           {[
             {
               t: "Checkout Otomatis & Aman",
-              d: "Transaksi atomic via RPC Supabase: cek stok, insert order, insert item, update stok—sekali jalan.",
+              d: "Transaksi: cek stok, insert order, insert item, update stok—sekali jalan.",
             },
             { t: "UI Clean & Responsif", d: "Transisi halus, layout rapi, nyaman dipakai mobile sampai desktop." },
-            { t: "Riwayat Pesanan Jelas", d: "Status order & pembayaran ditarik langsung dari relasi database agar konsisten." },
+            { t: "Riwayat Pesanan Jelas", d: "Status order & pembayaran ditarik langsung agar konsisten." },
           ].map((x, i) => (
             <Reveal key={x.t} delay={i * 0.05}>
               <Card className="relative overflow-hidden">

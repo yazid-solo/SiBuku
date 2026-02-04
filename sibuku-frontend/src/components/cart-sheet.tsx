@@ -219,7 +219,7 @@ export default function CartSheet({
               </div>
 
               <div className="text-[11px] text-white/50 mt-3">
-                Data otomatis dari endpoint <code className="text-white/70">/api/cart</code>.
+                Data otomatis dari <code className="text-white/70">yang disimpan</code>.
               </div>
             </div>
           </Card>
