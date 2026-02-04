@@ -369,7 +369,7 @@ export default function AdminOrderDetailPage() {
 
           <Card>
             <div className="font-semibold">Update Status</div>
-            <div className="text-xs text-white/50 mt-1">Dropdown otomatis dari endpoint master status.</div>
+            <div className="text-xs text-white/50 mt-1">Dropdown otomatis dari master status.</div>
 
             {masterUnauthorized ? (
               <div className="mt-3 text-xs text-amber-200">

@@ -42,7 +42,6 @@ export default function Footer() {
           <div>Built with for modern ecommerce experience.</div>
           <div className="flex items-center gap-4">
             <a className="hover:text-white transition" href="#" rel="noreferrer">Privacy</a>
-            <a className="hover:text-white transition" href="#" rel="noreferrer">Terms</a>
             <a className="hover:text-white transition" href="#" rel="noreferrer">Support</a>
           </div>
         </div>

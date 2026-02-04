@@ -317,7 +317,7 @@ export default function AuthorDetailPage() {
             <Card className="sm:col-span-2 md:col-span-4">
               <div className="font-semibold">Belum ada buku ditemukan</div>
               <div className="text-sm text-white/60 mt-1">
-                Jika backend belum support filter penulis, klik “Lihat semua” untuk cari via search.
+                Jika belum support filter penulis, klik “Lihat semua” untuk cari via search.
               </div>
               <div className="mt-4">
                 <Link href={moreHref}>

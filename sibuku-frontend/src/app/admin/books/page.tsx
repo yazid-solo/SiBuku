@@ -385,7 +385,7 @@ export default function AdminBooksPage() {
         <div className="flex items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black">Admin • Books</h1>
-            <p className="text-white/60 mt-1">CRUD buku + cover (Supabase Storage) sesuai endpoint backend kamu.</p>
+            <p className="text-white/60 mt-1">Buku + cover sesuai dengan kamu.</p>
           </div>
 
           <div className="hidden md:flex items-center gap-2 text-xs text-white/50">

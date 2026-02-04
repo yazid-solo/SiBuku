@@ -247,7 +247,7 @@ export default function CartPage() {
                 </Link>
 
                 <div className="text-[11px] text-white/50">
-                  Tips: Checkout akan otomatis ambil metode pembayaran dari backend.
+                  Tips: Checkout akan otomatis ambil metode pembayaran.
                 </div>
               </div>
             </Card>

@@ -198,7 +198,7 @@ export default function AdminAuthorsPage() {
         <div className="flex items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black">Admin • Authors</h1>
-            <p className="text-white/60 mt-1">Kelola penulis + foto penulis (Supabase Storage).</p>
+            <p className="text-white/60 mt-1">Kelola penulis + foto penulis .</p>
           </div>
 
           <div className="hidden md:flex items-center gap-2 text-xs text-white/50">
@@ -334,7 +334,7 @@ export default function AdminAuthorsPage() {
           <Card>
             <div className="font-semibold">Tambah Penulis</div>
             <p className="text-sm text-white/60 mt-1">
-              Endpoint: <code className="text-white/80">POST /admin/authors</code>
+              Silahkan diisi: <code className="text-white/80">admin/authors</code>
             </p>
 
             <div className="mt-4 grid gap-3">

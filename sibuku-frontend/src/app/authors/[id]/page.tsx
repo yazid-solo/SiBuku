@@ -88,7 +88,7 @@ export default function AuthorDetailPage() {
             <Card>
               <div className="font-semibold">Rekomendasi</div>
               <div className="text-sm text-white/60 mt-2">
-                (Opsional next step) kita bisa tampilkan daftar buku dari penulis ini kalau backend nanti menyediakan endpoint filter `books?author_id=...`.
+                (Opsional next step) kita bisa tampilkan daftar buku dari penulis ini kalau nanti menyediakan filter `books?author_id=...`.
               </div>
             </Card>
           </Reveal>

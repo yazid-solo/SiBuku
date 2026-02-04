@@ -129,7 +129,7 @@ export default async function HomePage() {
         <div className="grid lg:grid-cols-2 gap-10 lg:gap-12 items-center">
           <Reveal>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge>Platform E-Commerce Buku Modern</Badge>
+              <Badge>Platform E-Commerce Buku</Badge>
               <Pill>FastAPI + Supabase</Pill>
               <Pill>Next.js</Pill>
             </div>

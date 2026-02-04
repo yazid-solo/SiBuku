@@ -22,7 +22,7 @@ export default function Footer() {
         <div className="grid gap-2 text-sm">
           <div className="font-semibold">Bantuan</div>
           <div className="text-white/60">Email: support@sibuku.id</div>
-          <div className="text-white/60">Jam kerja: 09:00–17:00</div>
+          <div className="text-white/60">Jam kerja: 09:00–09:00</div>
           <div className="text-[11px] text-white/40 mt-3">
             © {new Date().getFullYear()} Sibuku • All rights reserved
           </div>

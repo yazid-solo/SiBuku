@@ -38,7 +38,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           <AdminNav items={nav} />
 
           <div className="mt-4 text-xs text-white/40 px-3">
-            Semua API admin via cookie token + backend role-check.
+            Semua admin via cookie token + role-check.
           </div>
         </aside>
 

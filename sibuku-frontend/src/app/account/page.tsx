@@ -203,7 +203,7 @@ export default function AccountPage() {
       toast({
         variant: "error",
         title: "Gagal ubah role",
-        message: e?.message || "Pastikan endpoint /api/users/role sudah ada.",
+        message: e?.message || "Pastikan users/role sudah ada.",
       });
     },
   });

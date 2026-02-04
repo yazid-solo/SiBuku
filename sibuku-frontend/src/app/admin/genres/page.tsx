@@ -97,7 +97,7 @@ export default function AdminGenresPage() {
         <div className="flex items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black">Admin • Genres</h1>
-            <p className="text-white/60 mt-1">Master kategori (genre) untuk filter katalog.</p>
+            <p className="text-white/60 mt-1">Kategori (genre) untuk filter katalog.</p>
           </div>
 
           <div className="hidden md:flex items-center gap-2 text-xs text-white/50">

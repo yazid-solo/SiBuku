@@ -265,7 +265,7 @@ function PaymentInstruction({ method }: { method: PaymentMethodNorm | null }) {
 
   const desc = method.desc?.trim() || "";
   if (!desc) {
-    return <div className="mt-3 text-xs text-white/50">Tidak ada instruksi tambahan dari backend.</div>;
+    return <div className="mt-3 text-xs text-white/50">Tidak ada instruksi tambahan.</div>;
   }
 
   const parsed = tryParseJson(desc);
@@ -346,7 +346,7 @@ function PaymentInstruction({ method }: { method: PaymentMethodNorm | null }) {
       ) : null}
 
       <div className="text-[11px] text-white/40 mt-3">
-        *Otomatis dari field <code className="text-white/70">keterangan</code> di backend.
+        *Otomatis dari field <code className="text-white/70">keterangan</code>.
       </div>
     </div>
   );
@@ -693,7 +693,7 @@ export default function CheckoutPage() {
                   <div>
                     <div className="font-semibold">Metode Pembayaran</div>
                     <p className="text-sm text-white/60 mt-1">
-                      Otomatis dari backend via <code className="text-white/80">GET /payment-methods</code>.
+                      Otomatis dari via <code className="text-white/80">payment-methods</code>.
                     </p>
                   </div>
 

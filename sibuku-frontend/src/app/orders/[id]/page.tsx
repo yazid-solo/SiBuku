@@ -215,7 +215,7 @@ function PaymentInstruction({ order }: { order?: Order | null }) {
 
       {!hasAny ? (
         <div className="mt-3 text-xs text-white/60">
-          Instruksi belum tersedia dari backend untuk metode ini.
+          Instruksi belum tersedia untuk metode ini.
         </div>
       ) : null}
 
@@ -262,7 +262,7 @@ function PaymentInstruction({ order }: { order?: Order | null }) {
 
       <div className="text-[11px] text-white/40 mt-3">
         *Konten di atas otomatis dari field{" "}
-        <code className="text-white/70">keterangan/deskripsi</code> di backend.
+        <code className="text-white/70">keterangan/deskripsi</code>.
       </div>
     </div>
   );
