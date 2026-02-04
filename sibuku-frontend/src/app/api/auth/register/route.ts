@@ -1,5 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { API_BASE_URL } from "@/lib/env";
+
+export const runtime = "nodejs"; // pastikan jalan di Node, bukan Edge
 
 function safeJson(text: string) {
   try {
@@ -10,24 +13,45 @@ function safeJson(text: string) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
+  try {
+    const body = await req.json().catch(() => ({}));
 
-  const res = await fetch(`${API_BASE_URL}/auth/register`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+    if (!API_BASE_URL) {
+      return NextResponse.json(
+        { detail: "API_BASE_URL belum diset di Environment Variables (Vercel)." },
+        { status: 500 }
+      );
+    }
 
-  const text = await res.text();
-  const data = safeJson(text);
+    // Biar aman kalau API_BASE_URL ada/tidak ada trailing slash
+    const url = new URL("/auth/register", API_BASE_URL).toString();
 
-  if (!res.ok) {
-    const detail = data?.detail ?? data ?? "Register gagal";
-    return NextResponse.json({ detail }, { status: res.status });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+
+    const text = await res.text();
+    const data = safeJson(text);
+
+    if (!res.ok) {
+      const detail = data?.detail ?? data ?? text ?? "Register gagal";
+      return NextResponse.json({ detail }, { status: res.status });
+    }
+
+    return NextResponse.json(
+      data ?? { message: "Registrasi berhasil" },
+      { status: res.status }
+    );
+  } catch (err: any) {
+    return NextResponse.json(
+      { detail: err?.message ?? "Internal Server Error di /api/auth/register" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json(data ?? { message: "Registrasi berhasil" }, { status: res.status });
 }
