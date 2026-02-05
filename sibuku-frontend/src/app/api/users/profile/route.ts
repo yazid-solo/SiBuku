@@ -4,8 +4,30 @@ import { API_BASE_URL, TOKEN_COOKIE } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
+function normalizeBearerToken(raw: string | null | undefined) {
+  let t = String(raw ?? "").trim();
+  if (!t) return "";
+  while (t.toLowerCase().startsWith("bearer ")) t = t.slice(7).trim();
+  return t;
+}
+
+async function readUpstream(res: Response) {
+  if (res.status === 204) return null;
+  const ct = res.headers.get("content-type") ?? "";
+  const text = await res.text().catch(() => "");
+  if (ct.includes("application/json") && text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
+  return text || null;
+}
+
 export async function GET() {
-  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  const tokenRaw = (await cookies()).get(TOKEN_COOKIE)?.value;
+  const token = normalizeBearerToken(tokenRaw);
   if (!token) return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
 
   const res = await fetch(`${API_BASE_URL}/users/profile`, {
@@ -13,12 +35,13 @@ export async function GET() {
     cache: "no-store",
   });
 
-  const data = await res.json().catch(() => null);
+  const data = await readUpstream(res);
   return NextResponse.json(data ?? null, { status: res.status });
 }
 
 export async function PATCH(req: Request) {
-  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  const tokenRaw = (await cookies()).get(TOKEN_COOKIE)?.value;
+  const token = normalizeBearerToken(tokenRaw);
   if (!token) return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => null);
@@ -34,9 +57,8 @@ export async function PATCH(req: Request) {
     cache: "no-store",
   });
 
-  // kalau backend balikin kosong
   if (res.status === 204) return new NextResponse(null, { status: 204 });
 
-  const data = await res.json().catch(() => null);
+  const data = await readUpstream(res);
   return NextResponse.json(data ?? null, { status: res.status });
 }

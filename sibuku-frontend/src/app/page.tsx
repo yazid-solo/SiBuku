@@ -2,6 +2,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 import Reveal from "@/components/ui/reveal";
 import Button from "@/components/ui/button";
@@ -63,7 +65,7 @@ async function getGenres(): Promise<Genre[]> {
 /* ---------------- static data (boleh tetap manual) ---------------- */
 
 const team = [
-  { name: "Dimas Husain Rabani", role: "Product, Frontend & UI/UX", avatar: "/avatars/dev1.svg"},
+  { name: "Dimas Husain Rabani", role: "Product, Frontend & UI/UX", avatar: "/avatars/dev1.svg" },
   { name: "Berlian Fatma Riyani", role: "Backend Engineer", avatar: "/avatars/dev2.svg" },
   { name: "Ibnu Abbas", role: "Frontend Engineer & Project Manager", avatar: "/avatars/dev3.svg" },
   { name: "Muchamad Yazid Ardani", role: "Database & Backend Engineer", avatar: "/avatars/dev4.svg" },
@@ -107,6 +109,13 @@ function Pill({ children }: { children: ReactNode }) {
 }
 
 export default async function HomePage() {
+  // ✅ Gate onboarding sebelum masuk landing page (first-time only)
+  // Cookie ini diset oleh POST /api/onboarding/complete
+  const onboarded = (await cookies()).get("sibuku_onboarded_intro")?.value === "1";
+  if (!onboarded) {
+    redirect(`/onboarding?next=${encodeURIComponent("/")}`);
+  }
+
   const [featured, genres] = await Promise.all([getFeatured(), getGenres()]);
 
   const stats = [
